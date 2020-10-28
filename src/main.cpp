@@ -10,7 +10,7 @@ int main(int ac, char **av)
         return 1;
     }
 
-    char *addressDest = av[1];
+    char *domainNameDest = av[1];
 
     uint16_t leBonGrosPorc = 33434;
 
@@ -21,15 +21,15 @@ int main(int ac, char **av)
 
     //requete DNS pour resoudre le nom de domaine
     addrinfo *addrInfoLst;
-    int ret = getaddrinfo(addressDest, std::to_string(leBonGrosPorc).c_str(), &hints, &addrInfoLst);
+    int ret = getaddrinfo(domainNameDest, std::to_string(leBonGrosPorc).c_str(), &hints, &addrInfoLst);
     if (ret)
     {
-        cout << "ping: cannot resolve " << addressDest << ": Unknown host" << endl;
+        cout << "ping: cannot resolve " << domainNameDest << ": Unknown host" << endl;
         return 1;
     }
 
     //recuperation de l'adresse en char[] pour l'affichage.
-    std::string ipDest = getIpStr(*((sockaddr_in*)addrInfoLst->ai_addr));
+    std::string ipDest = getIpStr(*((sockaddr_in *) addrInfoLst->ai_addr));
 
     addrinfo *addrInfoLstFirst = addrInfoLst;
 
@@ -39,12 +39,12 @@ int main(int ac, char **av)
         return 1;
     }
 
-    if(addrInfoLst->ai_next)
+    if (addrInfoLst->ai_next)
     {
-        cout << "traceroute: Warning: "<< addressDest <<" has multiple addresses; using " << ipDest << endl;
+        cout << "traceroute: Warning: " << domainNameDest << " has multiple addresses; using " << ipDest << endl;
     }
 
-    cout << "traceroute to " << addressDest<<" (" << ipDest << "), ?? hops max, ?? byte packets" << endl;
+    cout << "traceroute to " << domainNameDest << " (" << ipDest << "), ?? hops max, ?? byte packets" << endl;
 
     printAddrInfo(addrInfoLstFirst);
 
@@ -69,11 +69,11 @@ int main(int ac, char **av)
 
     sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons((uint16_t)28001);
+    addr.sin_port = htons((uint16_t) 28001);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     //MacOs specificity - (uniquement pour send)
-    int retBind = bind(sockFdUDP, (sockaddr *)&addr, sizeof(addr));
+    int retBind = bind(sockFdUDP, (sockaddr *) &addr, sizeof(addr));
     if (retBind == -1)
     {
         cout << "retBind error: " << retBind << endl;
@@ -91,18 +91,25 @@ int main(int ac, char **av)
 
     bool loop = true;
     int socketTTL = 1;
+
     while (loop)
     {
+        //modification du TTL
         ret = setsockopt(sockFdUDP, IPPROTO_IP, IP_TTL, &socketTTL, sizeof(socketTTL));
         if (ret == -1)
         {
             perror("perror setsockopt");
             cout << "ret: " << ret << endl << endl;
         }
-        char sendBuf[32] = {4};
-        for (int i = 1; i <= 3 ; ++i)
+
+        cout << std::setw(2) << std::setfill(' ') << socketTTL << "  " << std::flush;
+        std::string ipResponseIcmpPrev;
+        for (int i = 0; i < 3; i++)
         {
+            char sendBuf[32] = {0}; //Ici, Alegay a gagné un BurgerKing 👑
             ssize_t retSend;
+            timeval timeSend = {0};
+            gettimeofday(&timeSend, nullptr);
             retSend = sendto(sockFdUDP, sendBuf, 32, 0, addrInfoLstFirst->ai_addr, addrInfoLstFirst->ai_addrlen);
             if (retSend == -1)
             {
@@ -110,72 +117,66 @@ int main(int ac, char **av)
                 perror("perror sendto");
                 return 1;
             }
-        }
 
-        //On incremente le bon gros port
-        leBonGrosPorc++;
-        //On cast en sockaddr_in pour changer le port facilement
-        ((sockaddr_in*)addrInfoLstFirst)->sin_port = leBonGrosPorc;
+            //On incremente le bon gros porc. On cast la structure en sockaddr_in pour changer le port facilement
+            ((sockaddr_in *)addrInfoLstFirst->ai_addr)->sin_port = htons((uint16_t) leBonGrosPorc++);
 
-        timeval timeOut = {0};
-        timeval tvStartRead = {0};
-        timeval tvEndRead = {0};
-        timeOut.tv_sec = 5;
-
-        FD_ZERO(&fdRead);
-        FD_SET(sockFdICMP, &fdRead);
-        bool loopSelect = true;
-        while (loopSelect)
-        {
-            gettimeofday(&tvStartRead, nullptr);
+            timeval timeOut = {0};
+            timeOut.tv_sec = 5;
+            FD_ZERO(&fdRead);
+            FD_SET(sockFdICMP, &fdRead);
             //cout << "timeout: " << timeOut.tv_sec << "." << timeOut.tv_usec << endl;
             retSelect = select(sockFdICMP + 1, &fdRead, nullptr, nullptr, &timeOut);
-
-
-
             if (retSelect == -1)
             {
                 cout << "Error select()" << endl;
                 perror("perror select");
-                loopSelect = false;
             }
             else if (retSelect == 0)
             {
-                cout << "timeout" << endl;
-                loopSelect = false;
+                cout << " *";
             }
             else
             {
                 //data a lire
                 socklen_t p = sizeof(sockaddr_in);
                 ssize_t retRecv;
-                retRecv = recvfrom(sockFdICMP, bufRecv, 2048, 0, (sockaddr*)&sockaddrInRecv, &p);
+                retRecv = recvfrom(sockFdICMP, bufRecv, 2048, 0, (sockaddr *)&sockaddrInRecv, &p);
                 if (retRecv == -1)
                 {
                     cout << "Error recvfrom()" << endl;
                     perror("perror recvfrom");
                 }
+                timeval timeRecv = {0};
+                gettimeofday(&timeRecv, nullptr);
 
                 std::string ipResponseIcmp = getIpStr(sockaddrInRecv);
-                cout << ipResponseIcmp << endl;
+                if (!ipResponseIcmpPrev.empty() && ipResponseIcmpPrev != ipResponseIcmp)
+                {
+                    //l'IP est differente de la precedente
+                    cout << endl << "    " << ipResponseIcmp;
+                }
+                else if (ipResponseIcmpPrev.empty())
+                {
+                    cout << ipResponseIcmp;
+                }
+
+                ipResponseIcmpPrev = ipResponseIcmp;
+
+
+                cout << "  " << getDiffTimeval(timeSend, timeRecv) << " ms";
+
+                if (ipDest == ipResponseIcmp)
+                {
+                    loop = false;
+                    break;
+                }
 
                 //printSockaddr((sockaddr*)&sockaddrInRecv);
                 //hexdumpBuf(bufRecv, (uint32_t)retRecv);
-                cout << endl;
-            }
-
-            gettimeofday(&tvEndRead, nullptr);
-
-            timeOut = subTimeval(subTimeval(tvStartRead, tvEndRead), timeOut);
-            if (!(timeOut.tv_sec > 0 || (timeOut.tv_sec == 0 && timeOut.tv_usec > 0)))
-            {
-                //timeout
-                loopSelect = false;
-                cout << "timeout" <<  endl;
             }
         }
-
-        //loop = false;
+        cout << endl;
         socketTTL++;
     }
 
@@ -194,14 +195,14 @@ bool isEchoReply(uint8_t *buf, ssize_t retRecv)
     ip *ipHeader;
     icmp *icmpHeader;
 
-    if (retRecv >= (long)sizeof(ip))
+    if (retRecv >= (long) sizeof(ip))
     {
-        ipHeader = (ip*)buf;
+        ipHeader = (ip *) buf;
         if (ipHeader->ip_p == IPPROTO_ICMP && retRecv >= sizeof(ip) + ipHeader->ip_hl * 4)
         {
-            icmpHeader = (icmp*)(buf + ipHeader->ip_hl * 4);
+            icmpHeader = (icmp *) (buf + ipHeader->ip_hl * 4);
             if (icmpHeader->icmp_type == ICMP_ECHOREPLY && icmpHeader->icmp_code == 0
-                && icmpHeader->icmp_hun.ih_idseq.icd_id == (uint16_t)getpid())
+                && icmpHeader->icmp_hun.ih_idseq.icd_id == (uint16_t) getpid())
             {
                 return true;
             }
@@ -221,16 +222,16 @@ timeval subTimeval(const timeval &t1, const timeval &t2)
 
 double getDiffTimeval(const timeval &t1, const timeval &t2)
 {
-    double ret = (double)(t2.tv_sec * 1000000 + t2.tv_usec) - (double)(t1.tv_sec * 1000000 + t1.tv_usec);
+    double ret = (double) (t2.tv_sec * 1000000 + t2.tv_usec) - (double) (t1.tv_sec * 1000000 + t1.tv_usec);
     ret = (ret / 1000);
     return ret;
 }
 
 void hexdumpBuf(char *buf, uint32_t len)
 {
-    for (int i = 0 ; i < len ; i++)
+    for (int i = 0; i < len; i++)
     {
-        cout << std::setw(2) << std::setfill('0') << std::hex << (uint16_t)((uint8_t)buf[i]) << " ";
+        cout << std::setw(2) << std::setfill('0') << std::hex << (uint16_t) ((uint8_t) buf[i]) << " ";
 
         if (i % 8 == 7 && i % 16 != 15)
         {
@@ -244,7 +245,7 @@ void hexdumpBuf(char *buf, uint32_t len)
     cout << endl << std::dec;
 }
 
-uint16_t	icmpChecksum(uint16_t *data, uint32_t len)
+uint16_t icmpChecksum(uint16_t *data, uint32_t len)
 {
     uint32_t checksum;
 
@@ -255,10 +256,10 @@ uint16_t	icmpChecksum(uint16_t *data, uint32_t len)
         len = len - sizeof(uint16_t);
     }
     if (len)
-        checksum = checksum + *(uint8_t *)data;
+        checksum = checksum + *(uint8_t *) data;
     checksum = (checksum >> 16) + (checksum & 0xffff);
     checksum = checksum + (checksum >> 16);
-    return (uint16_t)(~checksum);
+    return (uint16_t) (~checksum);
 }
 
 void printAddrInfo(addrinfo *pAddrInfo)
@@ -290,7 +291,7 @@ void printSockaddr(sockaddr *sockAddr)
         cout << "ai_addr->sa_data[14]: ";
         for (int d = 0; d < 14; d++)
         {
-            cout <<std::dec << (int)(uint8_t)sockAddr->sa_data[d] << " ";
+            cout << std::dec << (int) (uint8_t) sockAddr->sa_data[d] << " ";
         }
         cout << endl;
     }

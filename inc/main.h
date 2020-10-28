@@ -31,6 +31,8 @@ bool        isEchoReply(uint8_t *buf, ssize_t retRecv);
 void        onSignalReceived(int sig);
 void        printAddrInfo(addrinfo *pAddrInfo);
 void        printSockaddr(sockaddr *sockAddr);
+timeval     subTimeval(const timeval &t1, const timeval &t2);
+std::string getIpStr(const sockaddr_in &addr);
 
 using std::cout;
 using std::endl;

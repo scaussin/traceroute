@@ -33,6 +33,10 @@ void        printAddrInfo(addrinfo *pAddrInfo);
 void        printSockaddr(sockaddr *sockAddr);
 timeval     subTimeval(const timeval &t1, const timeval &t2);
 std::string getIpStr(const sockaddr_in &addr);
+bool        changeTTL(uint64_t sockFd, uint64_t socketTTL);
+bool        sendRequestUDP(uint64_t sockFd, addrinfo *addrInfo);
+std::string getDomainName(uint32_t IpAddr, std::string ipAddr);
+bool        isTTLExceeded(uint8_t *buf, ssize_t retRecv);
 
 using std::cout;
 using std::endl;

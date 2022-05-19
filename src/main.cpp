@@ -328,7 +328,7 @@ void printSockaddr(sockaddr *sockAddr)
 {
     if (sockAddr)
     {
-        cout << "ai_addr->sa_len: " << (int) sockAddr->sa_len << endl;
+        //cout << "ai_addr->sa_len: " << (int) sockAddr->sa_len << endl;
         cout << "ai_addr->sa_family: " << (int) sockAddr->sa_family << endl;
         cout << "ai_addr->sa_data[14]: ";
         for (int d = 0; d < 14; d++)
